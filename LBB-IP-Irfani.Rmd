@@ -1,0 +1,194 @@
+---
+title: "Pizza Sales at El Capitan Resto"
+author: "Muhammad Irfani"
+date: "`r format(Sys.Date(), '%B %e, %Y')`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+<style>                     
+.navbar {
+  background-color:red;
+  border-color:black;
+}
+.navbar-brand {
+color:black!important;
+}
+</style>     
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+
+# load library
+options(scipen = 99) #me-non-aktifkan scientific annotation
+library(tidyverse) #koleksi beberapa library R
+library(dplyr) #grammar of data manipulation
+library(readr) #membaca data
+library(ggplot2) #plot statis
+library(plotly) #plot interaktif
+library(glue) #setting tooltip
+library(lubridate) #treatment date column
+library(scales) # mengatur skala pada plot
+library(readxl) #import data excel
+```
+
+LBB3 : Interactive Plotting ini dibuat berdasarkan Data Visualization yang telah Penulis buat di LBB2 : Data Visualization. Untuk lebih memahami maksud dan tujuan dari Dashboard ini, silahkan kunjungi [LBB2 : Data visualization by Muhammad Irfani](https://rpubs.com/mirfani28/LBB-dv)
+
+
+```{r}
+#read data
+pizza_sales <- read_excel("data_input/datamodel-pizzasales.xlsx", sheet = "pizza_sales")
+
+#converting value di column 'pizza_ingredients' menjadi list
+pizza_sales$pizza_ingredients <- lapply(strsplit(as.character(pizza_sales$pizza_ingredients),
+                                                 "[][']|,\\s*"), function(x) x[nzchar(x)])
+
+#cleansing data
+pizza_sales_clean <-
+  pizza_sales %>%
+  mutate(
+    unit_price = as_factor(unit_price),
+    pizza_size = as_factor(pizza_size),
+    pizza_category = as_factor(pizza_category),
+    pizza_name = as_factor(pizza_name)
+  )
+
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Pizza Sales in 2015
+
+```{r, echo=FALSE,results='hide',fig.keep='all'}
+#agregasi data
+pizza_sales_name <-
+  pizza_sales_clean %>%
+  group_by(pizza_name) %>%
+  summarise(total_pizza_sales = sum(quantity)) %>%
+  ungroup() %>%
+  arrange(desc(total_pizza_sales)) %>%
+  mutate(label = glue("Total : {comma(total_pizza_sales)}
+                      Name : {pizza_name}"))
+
+#ggplot
+plot_sales_name <- 
+  ggplot(data = pizza_sales_name,
+                          mapping = aes(x = total_pizza_sales,
+                                        y = reorder(pizza_name, total_pizza_sales),
+                                        text = label)) + 
+  geom_col(aes(fill = total_pizza_sales), show.legend = FALSE) +
+  scale_fill_gradient(low = "yellow", high = "red") +
+  labs(
+    title = "Sales by Product",
+    y = "Pizza Name",
+    x = "Sales (Whole Round of Pizza)"
+  )
+  theme_minimal()
+
+
+```
+
+```{r}
+#ggplotly
+ggplotly(plot_sales_name, tooltip = "text")
+```
+
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Pizza Sales by Hour
+
+```{r, echo=FALSE,results='hide',fig.keep='all'}
+#membuat kolom baru untuk jam penjualan
+pizza_sales_clean$hour_sales <- hour(pizza_sales_clean$order_time)
+
+#agregasi jumlah penjualan pizza per jam
+pizza_hour_sales <- 
+  pizza_sales_clean %>%
+  group_by(hour_sales) %>%
+  summarise(total_pizza = sum(quantity)) %>% 
+  ungroup() %>%
+  arrange(hour_sales) %>%
+  mutate(label = glue("Hour : {hour_sales}
+                      Total Pizza : {comma(total_pizza)}"))
+
+# ggplot
+pizza_hour_lineplot <- 
+  ggplot(pizza_hour_sales, 
+         mapping = aes(x = hour_sales,
+                       group = 1,
+                       text = label
+                       )
+         ) +
+  geom_line(aes(y = total_pizza,
+                colour = "total_pizza"),
+            size = 1,
+            show.legend = FALSE
+            ) +
+  geom_point(aes(y = total_pizza),
+             size = 2,
+             color = "red"#,
+             #text = text
+             ) +
+  scale_y_continuous(labels = comma,
+                     breaks = seq(0,8000,500),
+                     limits = c(0, 8000)
+                     ) +
+  scale_x_continuous(breaks = seq(0,24,1)
+                     ) +
+  labs(
+    title = "Sales By Hour",
+    y = "Total Sales (Whole Round of Pizza)",
+    x = "Hour"
+  )
+  theme_minimal()
+```
+
+```{r}
+#ggplotly
+ggplotly(pizza_hour_lineplot, tooltip = "text")
+```
+
+
+
+
+### Sales Volume vs Total Gross Profit
+
+```{r}
+#agregasi data menjadi proporsi agar bisa dikomparasi
+pizza_sales_profit <-
+  pizza_sales_clean %>%
+  group_by(pizza_name) %>%
+  summarise(total_pizza_sales = sum(quantity), total_pizza_grossprofit = sum(total_price)) %>%
+  ungroup() %>%
+  arrange(desc(total_pizza_sales)) %>%
+  mutate(volume_percentage = total_pizza_sales / sum(total_pizza_sales), 
+         grossprofit_percentage = total_pizza_grossprofit / sum(total_pizza_grossprofit)) %>%
+  mutate(label = glue("Total Sales : {comma(total_pizza_sales)}
+                      Total Profit : {comma(total_pizza_grossprofit)}
+                      Name : {pizza_name}"))
+#ggplot
+plot_sales_profit <-
+  ggplot(pizza_sales_profit) +
+  geom_bar(aes(x = volume_percentage,
+               y = reorder(pizza_name, volume_percentage),
+               colour = "Sales Volume",
+               text = label), stat = "identity", fill = "red") +
+  geom_point(aes(x = grossprofit_percentage, 
+                y = reorder(pizza_name, volume_percentage),
+                colour = "Total Gross Profit",
+                text = label), stat = "identity", fill = "cyan", size = 2) +
+  labs(title = "Sales Volume vs Total Gross Profit",
+       x = "Percentage", y = "Pizza Name") +
+  theme_minimal()
+
+#ggplotly
+ggplotly(plot_sales_profit, tooltip = "text")
+
+```
+
